@@ -148,6 +148,37 @@ SCENARIOS = [
              req=["h.Recovery.Active", "h.U0", "d.U0"],
              ban=["h.eSS.Inactive", "d.eSS.Inactive"]),
     ]),
+    # scale=100 only (3x [PM_LC 4us + Recovery round trip]; 3rd strike -> eSS.Inactive).
+    # §六-5/B13: U3 entry consecutive-failure counting (7.2.4.2.4).
+    dict(sid="S9b", name="u3_entry_3_fail", scales=(100,), phases=[
+        dict(floor=20_000, set={"sys": {"f_pm_h2d": 1, "f_pm_d2h": 1}},
+             pulse=[("h", "req_u3", 2)],
+             req=["h.U0", "d.U0"],
+             ban=["h.eSS.Inactive", "d.eSS.Inactive"]), # failure 1: Recovery round trip, no give-up
+        dict(floor=20_000, set={"sys": {"f_pm_h2d": 1, "f_pm_d2h": 1}},
+             pulse=[("h", "req_u3", 2)],
+             req=["h.U0", "d.U0"],
+             ban=["h.eSS.Inactive", "d.eSS.Inactive"]), # failure 2
+        dict(floor=4_000, set={"sys": {"f_pm_h2d": 1, "f_pm_d2h": 1}},
+             pulse=[("h", "req_u3", 2)],
+             req=["h.eSS.Inactive"],                    # DS strikes out (UFP stays U0: no entry attempts)
+             ban=["h.Recovery.Active", "d.eSS.Inactive"]), # 3rd strike is DIRECT: no 4th Recovery detour
+        dict(floor=1_600_000, set={"sys": {"f_pm_h2d": 0, "f_pm_d2h": 0}},
+             req=["h.U0", "d.U0"]),                     # eSS.Inactive quiet -> retrain -> U0
+    ]),
+    # scale=100 only (Warm Reset burst 100ms). §六-5/B02: PORT_RESET directed in U3
+    # must become a Warm Reset (Inband Reset selection, p189-190).
+    dict(sid="S9c", name="u3_warm_reset_redirect", scales=(100,), phases=[
+        dict(t=50e-6, floor=120_000, pulse=[("h", "req_u3", 2)],
+             req=["h.U3", "d.U3", "d.out:tx_lau"]),
+        dict(floor=120_000, set={"h": {"warm_reset_req": 1}},
+             req=["h.WarmReset", "d.WarmReset"],
+             ban=["h.HotReset.Active", "d.HotReset.Active",
+                  "h.eSS.Inactive", "d.eSS.Inactive"]), # redirect; window covers UFP min-burst
+                                                        # detection (80ms/scale = 106400 cyc @100)
+        dict(floor=1_600_000, set={"h": {"warm_reset_req": 0}},
+             req=["h.U0", "d.U0"]),                     # WR burst done -> retrain -> U0
+    ]),
     # scale=1 only (Loopback exit burst 100us / tLoopbackExitTimeout 2ms at spec values).
     dict(sid="S10", name="loopback_roundtrip", scales=(1,), phases=[
         dict(t=1e-3, floor=600_000, set={"h": {"directed_loopback": 1, "loopback_capable": 1}},
@@ -166,6 +197,20 @@ SCENARIOS = [
              req=["h.eSS.Inactive", "h.U0", "d.U0"]), # 2ms guard -> eSS.Inactive -> retrain
         dict(floor=2_000, set={"sys": {"f_lbexit_d": 0}}, req=["h.U0", "d.U0"]),
     ]),
+    # scale=100 only (Warm Reset burst 100ms). §六-5/B02: PORT_RESET directed in
+    # Loopback must become a Warm Reset (Inband Reset selection, p189-190).
+    dict(sid="S10c", name="loopback_warm_reset_redirect", scales=(100,), phases=[
+        dict(t=1e-3, floor=600_000, set={"h": {"directed_loopback": 1, "loopback_capable": 1}},
+             req=["h.Loopback", "d.Loopback"]),
+        dict(floor=120_000, set={"h": {"directed_loopback": 1, "loopback_capable": 1,
+                                     "warm_reset_req": 1}},
+             req=["h.WarmReset", "d.WarmReset"],
+             ban=["h.HotReset.Active", "d.HotReset.Active",
+                  "h.eSS.Inactive", "d.eSS.Inactive"]), # redirect; same detection window as S9c
+        dict(floor=1_600_000, set={"h": {"directed_loopback": 0, "loopback_capable": 0,
+                                         "warm_reset_req": 0}},
+             req=["h.U0", "d.U0"]),                     # WR burst done -> retrain -> U0
+    ]),
     # scale=1 only (tHotResetActiveTimeout 12ms at spec value).
     dict(sid="S11", name="hot_reset_roundtrip", scales=(1,), phases=[
         dict(t=2e-3, floor=600_000, pulse=[("h", "hot_reset_req", 2)],
@@ -178,6 +223,19 @@ SCENARIOS = [
              req=["h.eSS.Inactive", "h.U0", "d.U0"],
              ban=["d.HotReset.Active"]), # negative: dev must not react
         dict(floor=2_000, set={"sys": {"f_ts2rst_d": 0}}, req=["h.U0", "d.U0"]),
+    ]),
+    # scale=100 only (LFPS exit + Recovery transit + Hot Reset 12ms). §六-5/B02:
+    # PORT_RESET directed in U1 rides the U1 exit handshake into Recovery and the
+    # held request completes the chain as a Hot Reset in Recovery.Idle (p189-190).
+    dict(sid="S11c", name="u1_hot_reset_chain", scales=(100,), phases=[
+        dict(t=50e-6, floor=120_000, pulse=[("h", "req_u1", 2)],
+             req=["h.U1", "d.U1", "d.out:tx_lau"]),
+        dict(floor=100_000, set={"h": {"hot_reset_req": 1}},
+             req=["h.HotReset.Active", "d.HotReset.Active"],
+             ban=["h.eSS.Inactive", "d.eSS.Inactive"]), # chain must not fall to inactive
+        dict(floor=600_000, set={"h": {"hot_reset_req": 0}},
+             req=["h.U0", "d.U0"],
+             ban=["h.eSS.Inactive", "d.eSS.Inactive"]),
     ]),
     # scale=1 only (Recovery timeouts 12/6/2ms at spec values).
     dict(sid="S12", name="recovery_triggered", scales=(1,), phases=[
@@ -214,7 +272,8 @@ SCENARIOS = [
 IDLE_CAPABLE = ["Polling.Idle", "U0", "HotReset.Exit", "Recovery.Idle"]
 
 # Level outputs driven per side, default 0.
-SIDE_LEVELS = ["directed_loopback", "loopback_capable", "compliance_enable", "u2_inactivity_enable"]
+SIDE_LEVELS = ["directed_loopback", "loopback_capable", "compliance_enable", "u2_inactivity_enable",
+               "hot_reset_req", "warm_reset_req"]
 # Pulse outputs driven per side, default 0.
 SIDE_PULSES = ["req_u1", "req_u2", "req_u3", "warm_reset_req", "hot_reset_req",
                "exit_u1_req", "exit_u2_req", "wakeup_u3_req", "directed_recovery",
@@ -295,20 +354,22 @@ class LTSSMScenarios(LiteXModule):
             for side, name, width in p.get("pulse", []):
                 pulse_phases[f"{side}.{name}"].append((k, width))
 
-        # Level outputs: comb from Array tables.
-        for key, values in level_values.items():
-            sig = Signal(name=key.replace(".", "_"))
-            setattr(self, key.replace(".", "_"), sig)
-            self.comb += sig.eq(Array(values)[self.phase])
-
-        # Pulse outputs: 1 cycle (or width) at phase entry.
+        # Level outputs: comb from Array tables. Pulse outputs assert 1 at phase entry.
+        # hot_reset_req/warm_reset_req live in BOTH tables (S6/S8/S11 pulse them at phase
+        # entry; S9b/S9c/S10c/S11c hold them as levels) -> ONE combined driver per signal:
+        # level base OR entry pulse. Two comb drivers on one signal would conflict and the
+        # later pulse driver would silently mask the held level.
+        pulse_conds = {}
         for key, entries in pulse_phases.items():
-            sig = Signal(name=key.replace(".", "_"))
-            setattr(self, key.replace(".", "_"), sig)
             cond = 0
             for k, width in entries:
                 cond = cond | ((self.phase == k) & (pcnt < width))
-            self.comb += sig.eq(cond)
+            pulse_conds[key] = cond
+        for key in list(level_values.keys()) + [k for k in pulse_conds if k not in level_values]:
+            sig = Signal(name=key.replace(".", "_"))
+            setattr(self, key.replace(".", "_"), sig)
+            base = Array(level_values[key])[self.phase] if key in level_values else 0
+            self.comb += sig.eq(base | pulse_conds.get(key, 0))
 
         # Proxies -------------------------------------------------------------------------------------
         def delayed(source, delay):
