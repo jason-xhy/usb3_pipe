@@ -130,7 +130,7 @@ class USB3SerDesModel(LiteXModule):
 # USB3PIPESim --------------------------------------------------------------------------------------
 
 class USB3PIPESim(SoCMini):
-    def __init__(self, phy_dw=20):
+    def __init__(self, phy_dw=20, timer_scale=1, with_scenarios=False):
         sys_clk_freq = int(133e6)
 
         # Platform.
@@ -144,37 +144,15 @@ class USB3PIPESim(SoCMini):
         host_usb3_serdes = USB3SerDesModel(phy_dw=phy_dw)
         host_usb3_pipe   = USB3PIPE(
             serdes       = host_usb3_serdes,
-            sys_clk_freq = sys_clk_freq)
+            sys_clk_freq = sys_clk_freq,
+            timer_scale  = timer_scale)
         self.submodules += host_usb3_serdes, host_usb3_pipe
 
         # USB3 Host LTSSM.
-        host_usb3_ltssm = USB3LTSSM(sys_clk_freq=sys_clk_freq)
+        host_usb3_ltssm = USB3LTSSM(sys_clk_freq=sys_clk_freq, timer_scale=timer_scale)
         self.submodules += host_usb3_ltssm
-        self.comb += [
-            # LTSSM -> PIPE
-            host_usb3_pipe.lfps_tx_polling.eq(host_usb3_ltssm.lfps_tx_polling),
-            host_usb3_pipe.lfps_tx_idle.eq(host_usb3_ltssm.lfps_tx_idle),
-            host_usb3_pipe.ts_rx_enable.eq(host_usb3_ltssm.ts_rx_enable),
-            host_usb3_pipe.ts_tx_enable.eq(host_usb3_ltssm.ts_tx_enable),
-            host_usb3_pipe.ts_tx_tseq.eq(host_usb3_ltssm.ts_tx_tseq),
-            host_usb3_pipe.ts_tx_ts1.eq(host_usb3_ltssm.ts_tx_ts1),
-            host_usb3_pipe.ts_tx_ts2.eq(host_usb3_ltssm.ts_tx_ts2),
-
-            host_usb3_pipe.serdes_rx_align.eq(host_usb3_ltssm.serdes_rx_align),
-            host_usb3_pipe.serdes_rx_polarity.eq(host_usb3_ltssm.serdes_rx_polarity),
-
-            host_usb3_pipe.rx_ready.eq(host_usb3_ltssm.rx_ready),
-            host_usb3_pipe.tx_ready.eq(host_usb3_ltssm.tx_ready),
-
-            # PIPE -> LTSSM
-            host_usb3_ltssm.lfps_rx_polling.eq(host_usb3_pipe.lfps_rx_polling),
-            host_usb3_ltssm.lfps_tx_count.eq(host_usb3_pipe.lfps_tx_count),
-
-            host_usb3_ltssm.ts_rx_ts1.eq(host_usb3_pipe.ts_rx_ts1),
-            host_usb3_ltssm.ts_rx_ts1_inv.eq(host_usb3_pipe.ts_rx_ts1_inv),
-            host_usb3_ltssm.ts_rx_ts2.eq(host_usb3_pipe.ts_rx_ts2),
-            host_usb3_ltssm.ts_tx_done.eq(host_usb3_pipe.ts_tx_done),
-        ]
+        self.comb += host_usb3_ltssm.ds_port.eq(1) # Host = Downstream Port.
+        self.comb += self.wire_ltssm_pipe(host_usb3_ltssm, host_usb3_pipe)
         host_usb3_ltssm.finalize()
 
         host_usb3_core = USB3Core(platform, daisho_core="daisho_mod")
@@ -189,39 +167,17 @@ class USB3PIPESim(SoCMini):
         # USB3 Device.
         dev_usb3_serdes = USB3SerDesModel(phy_dw=phy_dw)
         dev_usb3_pipe   = USB3PIPE(
-            serdes          = dev_usb3_serdes,
-            sys_clk_freq    = sys_clk_freq)
+            serdes       = dev_usb3_serdes,
+            sys_clk_freq = sys_clk_freq,
+            timer_scale  = timer_scale)
         self.submodules += dev_usb3_serdes, dev_usb3_pipe
         dev_usb3_pipe.finalize()
 
-        # USB3 Host LTSSM.
-        dev_usb3_ltssm = USB3LTSSM(sys_clk_freq=sys_clk_freq)
+        # USB3 Device LTSSM.
+        dev_usb3_ltssm = USB3LTSSM(sys_clk_freq=sys_clk_freq, timer_scale=timer_scale)
         self.submodules += dev_usb3_ltssm
-        self.comb += [
-            # LTSSM -> PIPE
-            dev_usb3_pipe.lfps_tx_polling.eq(dev_usb3_ltssm.lfps_tx_polling),
-            dev_usb3_pipe.lfps_tx_idle.eq(dev_usb3_ltssm.lfps_tx_idle),
-            dev_usb3_pipe.ts_rx_enable.eq(dev_usb3_ltssm.ts_rx_enable),
-            dev_usb3_pipe.ts_tx_enable.eq(dev_usb3_ltssm.ts_tx_enable),
-            dev_usb3_pipe.ts_tx_tseq.eq(dev_usb3_ltssm.ts_tx_tseq),
-            dev_usb3_pipe.ts_tx_ts1.eq(dev_usb3_ltssm.ts_tx_ts1),
-            dev_usb3_pipe.ts_tx_ts2.eq(dev_usb3_ltssm.ts_tx_ts2),
-
-            dev_usb3_pipe.serdes_rx_align.eq(dev_usb3_ltssm.serdes_rx_align),
-            dev_usb3_pipe.serdes_rx_polarity.eq(dev_usb3_ltssm.serdes_rx_polarity),
-
-            dev_usb3_pipe.rx_ready.eq(dev_usb3_ltssm.rx_ready),
-            dev_usb3_pipe.tx_ready.eq(dev_usb3_ltssm.tx_ready),
-
-            # PIPE -> LTSSM
-            dev_usb3_ltssm.lfps_rx_polling.eq(dev_usb3_pipe.lfps_rx_polling),
-            dev_usb3_ltssm.lfps_tx_count.eq(dev_usb3_pipe.lfps_tx_count),
-
-            dev_usb3_ltssm.ts_rx_ts1.eq(dev_usb3_pipe.ts_rx_ts1),
-            dev_usb3_ltssm.ts_rx_ts1_inv.eq(dev_usb3_pipe.ts_rx_ts1_inv),
-            dev_usb3_ltssm.ts_rx_ts2.eq(dev_usb3_pipe.ts_rx_ts2),
-            dev_usb3_ltssm.ts_tx_done.eq(dev_usb3_pipe.ts_tx_done),
-        ]
+        self.comb += dev_usb3_ltssm.ds_port.eq(0) # Device = Upstream Port.
+        self.comb += self.wire_ltssm_pipe(dev_usb3_ltssm, dev_usb3_pipe)
         dev_usb3_ltssm.finalize()
 
         dev_usb3_core = USB3Core(platform, daisho_core="daisho_mod")
@@ -235,6 +191,24 @@ class USB3PIPESim(SoCMini):
 
         # Connect Host <--> Device.
         host_usb3_serdes.connect(dev_usb3_serdes)
+
+        # LTSSM lower-layer inputs: scenario sequencer proxies or M4.0 defaults.
+        if with_scenarios:
+            from sim_ltssm_scenario import LTSSMScenarios
+            self.scenarios = scenarios = LTSSMScenarios(
+                host         = host_usb3_ltssm,
+                dev          = dev_usb3_ltssm,
+                sys_clk_freq = sys_clk_freq,
+                timer_scale  = timer_scale)
+            self.comb += self.wire_scenarios(scenarios, host_usb3_ltssm, dev_usb3_ltssm,
+                                             host_usb3_pipe, dev_usb3_pipe)
+        else:
+            # M4.0 baseline behaviour: idle handshake pre-completed, no PM/scenario activity.
+            for ltssm in [host_usb3_ltssm, dev_usb3_ltssm]:
+                self.comb += [
+                    ltssm.rx_idle8.eq(1),
+                    ltssm.link_activity.eq(1),
+                ]
 
         # Simulation Timer.
         timer = Signal(32)
@@ -254,18 +228,135 @@ class USB3PIPESim(SoCMini):
                 ]
 
         # Simulation End.
-        end_timer = WaitTimer(2**16)
-        self.submodules += end_timer
-        self.comb += end_timer.wait.eq(host_usb3_ltssm.u0 & dev_usb3_ltssm.u0)
-        self.sync += If(end_timer.done, Finish())
+        # M4.0 baseline: Finish on dual U0 (2^16 cycles). Scenario mode: sequencer owns the end.
+        # (Scenario mode: rx_idle8/link_activity are driven exclusively by the sequencer proxies
+        # in wire_scenarios() -- do NOT add the M4.0 default drives here: multiple comb drivers
+        # compile to last-assignment-wins blocking assigns and would override the fault switches.)
+        if not with_scenarios:
+            end_timer = WaitTimer(2**16)
+            self.submodules += end_timer
+            self.comb += end_timer.wait.eq(host_usb3_ltssm.u0 & dev_usb3_ltssm.u0)
+            self.sync += If(end_timer.done, Finish())
+
+    @staticmethod
+    def wire_ltssm_pipe(ltssm, pipe):
+        """LTSSM <-> PIPE wiring (LFPS/TS face, design section 3)."""
+        return [
+            # LTSSM -> PIPE
+            pipe.lfps_tx_polling.eq(ltssm.lfps_tx_polling),
+            pipe.lfps_tx_idle.eq(ltssm.lfps_tx_idle),
+            pipe.lfps_tx_ping.eq(ltssm.lfps_tx_ping),
+            pipe.lfps_tx_exit_u1.eq(ltssm.lfps_tx_exit_u1),
+            pipe.lfps_tx_exit_u2.eq(ltssm.lfps_tx_exit_u2),
+            pipe.lfps_tx_wakeup_u3.eq(ltssm.lfps_tx_wakeup_u3),
+            pipe.lfps_tx_reset.eq(ltssm.lfps_tx_reset),
+            pipe.ts_rx_enable.eq(ltssm.ts_rx_enable),
+            pipe.ts_tx_enable.eq(ltssm.ts_tx_enable),
+            pipe.ts_tx_tseq.eq(ltssm.ts_tx_tseq),
+            pipe.ts_tx_ts1.eq(ltssm.ts_tx_ts1),
+            pipe.ts_tx_ts2.eq(ltssm.ts_tx_ts2),
+
+            pipe.serdes_rx_align.eq(ltssm.serdes_rx_align),
+            pipe.serdes_rx_polarity.eq(ltssm.serdes_rx_polarity),
+
+            pipe.rx_ready.eq(ltssm.rx_ready),
+            pipe.tx_ready.eq(ltssm.tx_ready),
+
+            # PIPE -> LTSSM
+            ltssm.lfps_rx_polling.eq(pipe.lfps_rx_polling),
+            ltssm.lfps_tx_count.eq(pipe.lfps_tx_count),
+            ltssm.lfps_rx_ping.eq(pipe.lfps_rx_ping),
+            ltssm.lfps_rx_exit_u1.eq(pipe.lfps_rx_exit_u1),
+            ltssm.lfps_rx_exit_u2.eq(pipe.lfps_rx_exit_u2),
+            ltssm.lfps_rx_wakeup_u3.eq(pipe.lfps_rx_wakeup_u3),
+            ltssm.lfps_rx_reset.eq(pipe.lfps_rx_reset),
+
+            ltssm.ts_rx_ts1.eq(pipe.ts_rx_ts1),
+            ltssm.ts_rx_ts1_inv.eq(pipe.ts_rx_ts1_inv),
+            ltssm.ts_rx_ts2.eq(pipe.ts_rx_ts2),
+            ltssm.ts_tx_done.eq(pipe.ts_tx_done),
+        ]
+
+    @staticmethod
+    def wire_scenarios(sc, host, dev, host_pipe, dev_pipe):
+        """Scenario sequencer -> LTSSM inputs (proxies, fault switches, injections)."""
+        wiring = []
+        # Host side.
+        wiring += [
+            host.req_u1.eq(sc.host_req_u1),
+            host.req_u2.eq(sc.host_req_u2),
+            host.req_u3.eq(sc.host_req_u3),
+            host.lgo_u1.eq(sc.host_lgo_u1),
+            host.lgo_u2.eq(sc.host_lgo_u2),
+            host.lgo_u3.eq(sc.host_lgo_u3),
+            host.lau.eq(sc.host_lau),
+            host.lxu.eq(sc.host_lxu),
+            host.rx_idle8.eq(sc.host_rx_idle8),
+            host.rx_ts2_reset.eq(sc.host_rx_ts2_reset),
+            host.rx_ts2_loopback.eq(sc.host_rx_ts2_loopback),
+            host.directed_recovery.eq(sc.host_directed_recovery),
+            host.directed_loopback.eq(sc.host_directed_loopback),
+            host.loopback_capable.eq(sc.host_loopback_capable),
+            host.compliance_enable.eq(sc.host_compliance_enable),
+            host.hot_reset_req.eq(sc.host_hot_reset_req),
+            host.warm_reset_req.eq(sc.host_warm_reset_req),
+            host.exit_u1_req.eq(sc.host_exit_u1_req),
+            host.exit_u2_req.eq(sc.host_exit_u2_req),
+            host.wakeup_u3_req.eq(sc.host_wakeup_u3_req),
+            host.u2_inactivity_enable.eq(sc.host_u2_inactivity_enable),
+            host.link_activity.eq(sc.host_link_activity),
+            host.lfps_rx_polling.eq(host_pipe.lfps_rx_polling | sc.host_inject_polling),
+            host.ts_rx_ts1.eq(host_pipe.ts_rx_ts1 | sc.host_inject_ts1),
+        ]
+        # Device side.
+        wiring += [
+            dev.req_u1.eq(sc.dev_req_u1),
+            dev.req_u2.eq(sc.dev_req_u2),
+            dev.req_u3.eq(sc.dev_req_u3),
+            dev.lgo_u1.eq(sc.dev_lgo_u1),
+            dev.lgo_u2.eq(sc.dev_lgo_u2),
+            dev.lgo_u3.eq(sc.dev_lgo_u3),
+            dev.lau.eq(sc.dev_lau),
+            dev.lxu.eq(sc.dev_lxu),
+            dev.rx_idle8.eq(sc.dev_rx_idle8),
+            dev.rx_ts2_reset.eq(sc.dev_rx_ts2_reset),
+            dev.rx_ts2_loopback.eq(sc.dev_rx_ts2_loopback),
+            dev.directed_recovery.eq(sc.dev_directed_recovery),
+            dev.directed_loopback.eq(sc.dev_directed_loopback),
+            dev.loopback_capable.eq(sc.dev_loopback_capable),
+            dev.compliance_enable.eq(sc.dev_compliance_enable),
+            dev.hot_reset_req.eq(sc.dev_hot_reset_req),
+            dev.warm_reset_req.eq(sc.dev_warm_reset_req),
+            dev.exit_u1_req.eq(sc.dev_exit_u1_req),
+            dev.exit_u2_req.eq(sc.dev_exit_u2_req),
+            dev.wakeup_u3_req.eq(sc.dev_wakeup_u3_req),
+            dev.u2_inactivity_enable.eq(sc.dev_u2_inactivity_enable),
+            dev.link_activity.eq(sc.dev_link_activity),
+            dev.lfps_rx_polling.eq(dev_pipe.lfps_rx_polling | sc.dev_inject_polling),
+        ]
+        # Fault switches (sim-level gates on PIPE/LTSSM faces).
+        wiring += [
+            # S6: dev silent (no Polling.LFPS transmission).
+            dev_pipe.lfps_tx_polling.eq(dev.lfps_tx_polling & sc.dev_tx_polling_en),
+            # S13: UFP Ping disabled.
+            dev_pipe.lfps_tx_ping.eq(dev.lfps_tx_ping & sc.dev_tx_ping_en),
+            # S10b: Loopback exit LFPS not seen by dev.
+            dev.lfps_rx_exit_u2.eq(dev_pipe.lfps_rx_exit_u2 & sc.dev_rx_exit_u2_en),
+            # S9: U3 Wakeup LFPS not seen by dev.
+            dev.lfps_rx_wakeup_u3.eq(dev_pipe.lfps_rx_wakeup_u3 & sc.dev_rx_wakeup_u3_en),
+        ]
+        return wiring
 
 # Build --------------------------------------------------------------------------------------------
 
 def main():
     parser = argparse.ArgumentParser(description="USB3 PIPE Simulation")
-    parser.add_argument("--trace",       action="store_true", help="Enable VCD tracing.")
-    parser.add_argument("--trace-start", default=0,           help="Cycle to start VCD tracing.")
-    parser.add_argument("--trace-end",   default=-1,          help="Cycle to end VCD tracing.")
+    parser.add_argument("--trace",        action="store_true", help="Enable VCD tracing.")
+    parser.add_argument("--trace-start",  default=0,           help="Cycle to start VCD tracing.")
+    parser.add_argument("--trace-end",    default=-1,          help="Cycle to end VCD tracing.")
+    parser.add_argument("--timer-scale",  default=1,           help="LTSSM/LFPS timers scale factor (1 = spec exact).")
+    parser.add_argument("--scenario",     action="store_true", help="Run the M4.1/M4.2 LTSSM scenario matrix.")
+    parser.add_argument("--only",         default=None,        help="Comma-separated scenario ids to keep (e.g. --only S1,S3). Requires --scenario.")
     args = parser.parse_args()
 
     sim_config = SimConfig(default_clk="sys_clk")
@@ -273,7 +364,14 @@ def main():
     os.system("cd usb3_core/daisho && make && ./usb_descrip_gen")
     os.system("cp usb3_core/daisho/usb3/*.init build/sim/gateware/")
 
-    soc = USB3PIPESim()
+    if args.only is not None:
+        # Debug/probe support: restrict the scenario matrix before the sequencer is built.
+        import sim_ltssm_scenario as _scen
+        keep = set(args.only.split(","))
+        _scen.SCENARIOS = [sc for sc in _scen.SCENARIOS if sc["sid"] in keep]
+        args.scenario = True
+
+    soc = USB3PIPESim(timer_scale=int(args.timer_scale), with_scenarios=args.scenario)
     builder = Builder(soc)
     builder.build(sim_config=sim_config,
         opt_level   = "O0",
